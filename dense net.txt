@@ -1,0 +1,92 @@
+import tensorflow as tf
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.models import Sequential, load_model
+from tensorflow.keras.layers import GlobalAveragePooling2D, Dense
+from tensorflow.keras.applications import DenseNet121
+import numpy as np
+
+# Limit GPU memory growth
+gpus = tf.config.experimental.list_physical_devices('GPU')
+if gpus:
+    try:
+        tf.config.experimental.set_virtual_device_configuration(gpus[0], [
+            tf.config.experimental.VirtualDeviceConfiguration(memory_limit=4096)  # Adjust the memory limit as needed
+        ])
+    except RuntimeError as e:
+        print(e)
+
+# Set the path to the preprocessed images folder
+preprocessed_images_folder = 'C:/Users/Sajiah Razeen/Documents/MATLAB/PreprocessedImages'
+
+# Set the target image size and batch size
+target_size = (224, 224)
+batch_size = 16
+
+# Create the image data generator
+data_generator = ImageDataGenerator(rescale=1.0/255.0, validation_split=0.2)
+
+# Load the training set
+train_generator = data_generator.flow_from_directory(
+    preprocessed_images_folder,
+    target_size=target_size,
+    batch_size=batch_size,
+    class_mode='categorical',  # Update class_mode to 'categorical'
+    subset='training'
+)
+
+# Load the validation set
+validation_generator = data_generator.flow_from_directory(
+    preprocessed_images_folder,
+    target_size=target_size,
+    batch_size=batch_size,
+    class_mode='categorical',  # Update class_mode to 'categorical'
+    subset='validation'
+)
+
+# Load the pre-trained model (DenseNet121)
+base_model = DenseNet121(include_top=False, weights='imagenet', input_shape=(224, 224, 3))
+
+# Freeze the pre-trained layers
+base_model.trainable = False
+
+# Build the model for fine-tuning
+model = Sequential()
+model.add(base_model)
+model.add(GlobalAveragePooling2D())
+model.add(Dense(128, activation='relu'))
+model.add(Dense(train_generator.num_classes, activation='softmax'))
+
+# Compile the model
+model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+
+# Train the model with fine-tuning
+model.fit(train_generator, epochs=10, validation_data=validation_generator)
+
+# Evaluate the model on the validation set
+_, accuracy = model.evaluate(validation_generator)
+print(f"Validation Accuracy: {accuracy * 100:.2f}%")
+
+# Save the trained model
+model.save('trained_model.h5')
+
+# Load the saved model
+model = load_model('trained_model.h5')
+
+# Set the path to the new data image
+new_image_path = 'C:/Users/Sajiah Razeen/Desktop/test_image.jpeg'  # Update the path without quotes
+
+# Load and preprocess the new image
+new_image = tf.keras.preprocessing.image.load_img(new_image_path, target_size=target_size)
+new_image = tf.keras.preprocessing.image.img_to_array(new_image)
+new_image = np.expand_dims(new_image, axis=0)
+new_image /= 255.0
+
+# Perform prediction on the new image
+prediction = model.predict(new_image)
+
+# Get the predicted class
+class_labels = train_generator.class_indices
+predicted_class = list(class_labels.keys())[np.argmax(prediction)]
+
+# Display the predicted class
+print(f"Predicted class: {predicted_class}")
